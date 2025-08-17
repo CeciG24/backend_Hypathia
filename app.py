@@ -3,9 +3,10 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash
 
 
-from models import db
 
+from models import db
 from models.usuario import Usuario
+from models.ruta_aprendizaje import RutaAprendizaje
 from datetime import datetime
 import re
 
@@ -172,5 +173,112 @@ def delete_usuario(id):
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar usuario: {str(e)}"}), 500
 
+#CRUD rutas de aprendizaje
+
+@app.route("/rutas-aprendizaje", methods=['GET'])
+def get_rutas():
+    try:
+        rutas = RutaAprendizaje.query.all()
+        
+        # Mejor estructuración de los datos
+        rutas_data = [
+            {
+                "id": ruta.id_ruta,
+                "titulo": ruta.titulo,
+                "descripcion": ruta.descripcion,
+                "nivel": ruta.nivel,
+                "fecha_creacion": ruta.fecha_creacion.isoformat() if ruta.fecha_creacion else None
+            }
+            for ruta in rutas
+        ]
+        
+        return jsonify({
+            "success": True,
+            "data": rutas_data,
+            "count": len(rutas_data)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route("/rutas-aprendizaje", methods=["POST"])
+def post_ruta():
+    try:
+        data = request.get_json()
+        # Validar datos obligatorios
+        if not data or not all(k in data for k in ("titulo", "descripcion", "nivel")):
+            return jsonify({"error": "Faltan datos obligatorios"}), 400
+
+        nueva_ruta = RutaAprendizaje(
+            titulo=data["titulo"],
+            descripcion=data["descripcion"],
+            nivel=data["nivel"],
+            fecha_creacion=datetime.utcnow()
+        )
+
+        db.session.add(nueva_ruta)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "titulo": nueva_ruta.titulo,
+            "message": "Ruta de aprendizaje creada exitosamente",
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    
+@app.route("/rutas-aprendizaje/<int:id>", methods=["PUT"])
+def update_ruta(id):
+    try:
+        ruta = RutaAprendizaje.query.get(id)
+        if not ruta:
+            return jsonify({"error": "Ruta no encontrado"}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No se proporcionaron datos para actualizar"}), 400
+
+        # Actualizar campos si se proporcionan
+        if "titulo" in data:
+            if not data["titulo"].strip():
+                return jsonify({"error": "El titulo no puede estar vacío"}), 400
+            ruta.titulo = data["titulo"]
+
+        if "descripcion" in data:
+            ruta.descripcion = data["descripcion"]
+
+        if "nivel" in data:
+            ruta.nivel = data["nivel"]
+
+        db.session.commit()
+        return jsonify({
+            "message": "Ruta actualizada con éxito",
+            "id_ruta": ruta.id_ruta
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al actualizar ruta de aprendizaje: {str(e)}"}), 500
+    
+@app.route("/rutas-aprendizaje/<int:id>", methods=["DELETE"])
+def delete_ruta(id):
+    try:
+        ruta = RutaAprendizaje.query.get(id)
+        if not ruta:
+            return jsonify({"error": "Ruta no encontrada"}), 404
+
+        db.session.delete(ruta)
+        db.session.commit()
+        return jsonify({"message": "Ruta eliminado con éxito"}), 202
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al eliminar ruta: {str(e)}"}), 500
+    
 if __name__ == "__main__":
     app.run(debug=True)
