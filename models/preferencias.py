@@ -1,5 +1,6 @@
 from models import db
-class preferencias (db.Model):
+
+class Preferencia (db.Model):
     __tablename__ = "preferencias"
 
     id_preferencia = db.Column(db.Integer, primary_key=True)
