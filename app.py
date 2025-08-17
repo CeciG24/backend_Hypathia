@@ -1,15 +1,19 @@
-from flask import Flask, request, jsonify,request
+from flask import Flask, request, jsonify,request,send_file
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash,check_password_hash
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 import logging
 import google.generativeai as genai
 import json
 app = Flask(__name__)
 from flask_login import LoginManager, login_required, current_user
+import subprocess
+import os
+import uuid
 
+jwt = JWTManager(app)
 login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login_usuario'  # Nombre exacto del endpoint
+login_manager.init_app(app) # Nombre exacto del endpoint
 app.config['SECRET_KEY'] = 'hsgdahjowuw123' 
 
 # Configura tu user_loader (necesitas un modelo Usuario)
@@ -31,6 +35,7 @@ from models.ruta_aprendizaje import RutaAprendizaje
 from models.perfil_estudiante import PerfilEstudiante
 from models.lecciones import Leccion
 from models.modulo import Modulo
+from models.pdfleccion import PDFLeccion
 from datetime import datetime
 import re
 
@@ -130,10 +135,18 @@ def crear_usuario():
         db.session.add(nuevo_usuario)
         db.session.commit()
 
+        access_token = create_access_token(identity={
+            "id": nuevo_usuario.id_usuario,
+            "email": nuevo_usuario.email,
+            "rol": nuevo_usuario.rol
+        })
+
         return jsonify({
             "message": "Usuario creado con éxito",
-            "id_usuario": nuevo_usuario.id_usuario
+            "id_usuario": nuevo_usuario.id_usuario,
+            "token": access_token
         }), 201
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear usuario: {str(e)}"}), 500
@@ -178,9 +191,12 @@ def update_usuario(id):
             usuario.id_preferencia = data["id_preferencia"]
 
         db.session.commit()
+        nuevo_token = create_access_token(identity=usuario.id_usuario)
+
         return jsonify({
             "message": "Usuario actualizado con éxito",
-            "id_usuario": usuario.id_usuario
+            "id_usuario": usuario.id_usuario,
+            "token": nuevo_token
         }), 200
     except Exception as e:
         db.session.rollback()
@@ -239,13 +255,16 @@ def post_ruta():
         if not data or not all(k in data for k in ("titulo", "descripcion", "nivel")):
             return jsonify({"error": "Faltan datos obligatorios"}), 400
 
+        NIVELES_PERMITIDOS=['básico', 'intermedio', 'avanzado']
+        if data["nivel"] not in NIVELES_PERMITIDOS:
+            return jsonify({"error": f"Nivel debe ser uno de: {NIVELES_PERMITIDOS}"}), 400
         nueva_ruta = RutaAprendizaje(
             titulo=data["titulo"],
             descripcion=data["descripcion"],
             nivel=data["nivel"],
             fecha_creacion=datetime.utcnow()
         )
-
+        
         db.session.add(nueva_ruta)
         db.session.commit()
         
@@ -307,7 +326,7 @@ def delete_ruta(id):
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar ruta: {str(e)}"}), 500
     
-@app.route("/login", methods=["POST"],endpoint='login_usuario')
+@app.route("/login", methods=["POST"])
 def login_usuario():
     try:
         data = request.get_json()
@@ -337,10 +356,13 @@ def login_usuario():
             logger.debug("Contraseña incorrecta")
             return jsonify({"error": "Credenciales inválidas"}), 401
 
-        logger.debug(f"Login exitoso para usuario: {usuario.email}")
+        access_token = create_access_token(identity=usuario.id_usuario)
+
+
         return jsonify({
             "message": "Login exitoso",
             "usuario": {
+                "token": access_token,
                 "id_usuario": usuario.id_usuario,
                 "nombre": usuario.nombre,
                 "email": usuario.email,
@@ -351,7 +373,81 @@ def login_usuario():
         }), 200
     except Exception as e:
         logger.error(f"Error al procesar login: {str(e)}")
-        return jsonify({"error": f"Error al procesar login: {str(e)}"}), 500
+        return jsonify({"error": f"Error al procesar login: {str(e)}"}),500
+    
+# Plantilla LaTeX para el PDF (incluye el nombre del módulo)
+LATEX_TEMPLATE = r"""
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[spanish]{babel}
+\usepackage{parskip}
+\usepackage{geometry}
+\geometry{margin=2cm}
+
+\begin{document}
+
+\begin{center}
+    \textbf{\Large } \\
+    \vspace{0.5cm}
+    \textbf{Lección: %s}
+\end{center}
+
+%s
+
+\end{document}
+"""
+
+
+@app.route('/generate_pdf/<int:leccion_id>', methods=['GET'])
+def generate_pdf(leccion_id):
+    # Obtener la lección desde la base de datos
+    leccion = Leccion.query.get_or_404(leccion_id)
+
+    # Obtener el nombre del módulo asociado
+    modulo = Modulo.query.get(leccion.id_modulo)
+
+
+    # Generar contenido LaTeX
+    title = leccion.titulo
+    content = leccion.contenido.replace('\n', '\n\n')  # Asegurar párrafos en LaTeX
+    latex_content = LATEX_TEMPLATE % ( title, content)
+
+    # Generar nombre de archivo único
+    pdf_filename = f"leccion_{leccion_id}_{uuid.uuid4()}.pdf"
+    pdf_filepath = os.path.join(app.config['PDF_UPLOAD_FOLDER'], pdf_filename)
+    tex_filepath = os.path.join(app.config['PDF_UPLOAD_FOLDER'], f"leccion_{leccion_id}.tex")
+
+    # Escribir archivo .tex
+    with open(tex_filepath, 'w', encoding='utf-8') as f:
+        f.write(latex_content)
+
+    # Compilar LaTeX a PDF usando latexmk
+    try:
+        subprocess.run(['latexmk', '-pdf', '-pdflatex=pdflatex', tex_filepath],
+                       cwd=app.config['PDF_UPLOAD_FOLDER'], check=True)
+    except subprocess.CalledProcessError as e:
+        return jsonify({'error': 'Error al generar el PDF'}), 500
+
+    # Limpiar archivos auxiliares
+    for ext in ['.aux', '.log', '.out', '.tex', '.fls', '.fdb_latexmk']:
+        try:
+            os.remove(os.path.join(app.config['PDF_UPLOAD_FOLDER'], f"leccion_{leccion_id}{ext}"))
+        except FileNotFoundError:
+            pass
+
+    # Guardar metadatos en la base de datos
+    pdf_entry = PDFLeccion(
+        id_leccion=leccion_id,
+        titulo=f"{title}",
+        url_pdf=f"/{app.config['PDF_UPLOAD_FOLDER']}/{pdf_filename}"
+    )
+    db.session.add(pdf_entry)
+    db.session.commit()
+
+    # Enviar el PDF al cliente
+    return send_file(pdf_filepath, as_attachment=True, download_name=f"{title}.pdf")
     
 @app.route("/save-results", methods=["POST"])
 @login_required
@@ -643,6 +739,10 @@ def post_leccion():
                 "orden")):
             return jsonify({"error": "Faltan datos obligatorios"}), 400
 
+        TIPOS_PERMITIDOS=['teórica', 'práctica', 'quiz']
+        if data["tipo"] not in TIPOS_PERMITIDOS:
+            return jsonify({"error": f"Tipo debe ser uno de: {TIPOS_PERMITIDOS}"}), 400
+        
         nueva_leccion = Leccion(
             id_modulo=data["id_modulo"],
             titulo=data["titulo"],
