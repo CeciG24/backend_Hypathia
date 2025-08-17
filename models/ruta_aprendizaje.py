@@ -1,6 +1,14 @@
+<<<<<<< HEAD
 
 from datetime import datetime
 from . import db
+=======
+from models import db
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+
+db = SQLAlchemy()
+>>>>>>> 5c996e8b362001d937c81d9fc3ce7c4e4a747824
 
 class RutaAprendizaje(db.Model):
     __tablename__ = 'rutaaprendizaje'
