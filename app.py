@@ -1,7 +1,11 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash,check_password_hash
+import logging
 
+# Configuración de logging (ya definido en el archivo original, incluido aquí para contexto)
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 from models import db
@@ -75,6 +79,11 @@ def crear_usuario():
         # Validar datos obligatorios
         if not data or not all(k in data for k in ("nombre", "email", "contraseña", "rol")):
             return jsonify({"error": "Faltan datos obligatorios: nombre, email, contraseña, rol"}), 400
+            # Validar campos obligatorios
+        required_fields = ["nombre", "email", "contraseña", "rol"]
+        for field in required_fields:
+            if field not in data or not str(data[field]).strip():
+                return jsonify({"error": f"Falta o está vacío el campo '{field}'"}), 400
 
         # Validar email
         if not is_valid_email(data["email"]):
@@ -140,7 +149,7 @@ def update_usuario(id):
         if "contraseña" in data:
             if not data["contraseña"].strip():
                 return jsonify({"error": "La contraseña no puede estar vacía"}), 400
-            usuario.contraseña_hash = generate_password_hash(data["contraseña"])
+            usuario.contraseña_hash = generate_password_hash(data["contraseña"],method="pbkdf2:sha256")
 
         if "rol" in data:
             if data["rol"].lower() not in VALID_ROLES:
@@ -168,7 +177,7 @@ def delete_usuario(id):
 
         db.session.delete(usuario)
         db.session.commit()
-        return jsonify({"message": "Usuario eliminado con éxito"}), 204
+        return jsonify({"message": "Usuario eliminado con éxito"}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar usuario: {str(e)}"}), 500
@@ -280,5 +289,98 @@ def delete_ruta(id):
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar ruta: {str(e)}"}), 500
     
+
+@app.route("/login", methods=["POST"])
+def login_usuario():
+    try:
+        data = request.get_json()
+        logger.debug(f"Datos recibidos para login: {data}")
+
+        # Validar datos obligatorios y no vacíos
+        required_fields = ["email", "contraseña"]
+        if not data or not all(k in data for k in required_fields):
+            return jsonify({"error": "Faltan datos obligatorios: email, contraseña"}), 400
+
+        for field in required_fields:
+            if not str(data[field]).strip():
+                return jsonify({"error": f"El campo '{field}' no puede estar vacío"}), 400
+
+        # Validar email
+        if not is_valid_email(data["email"]):
+            return jsonify({"error": "Formato de email inválido"}), 400
+
+        # Buscar usuario por email
+        usuario = Usuario.query.filter_by(email=data["email"]).first()
+        if not usuario:
+            logger.debug(f"Usuario no encontrado para email: {data['email']}")
+            return jsonify({"error": "Credenciales inválidas"}), 401
+
+        # Verificar contraseña
+        if not check_password_hash(usuario.contraseña_hash, data["contraseña"]):
+            logger.debug("Contraseña incorrecta")
+            return jsonify({"error": "Credenciales inválidas"}), 401
+
+        logger.debug(f"Login exitoso para usuario: {usuario.email}")
+        return jsonify({
+            "message": "Login exitoso",
+            "usuario": {
+                "id_usuario": usuario.id_usuario,
+                "nombre": usuario.nombre,
+                "email": usuario.email,
+                "rol": usuario.rol,
+                "fecha_registro": usuario.fecha_registro.isoformat(),
+                "id_preferencia": usuario.id_preferencia
+            }
+        }), 200
+    except Exception as e:
+        logger.error(f"Error al procesar login: {str(e)}")
+        return jsonify({"error": f"Error al procesar login: {str(e)}"}), 500
+@app.route("/login", methods=["POST"])
+def login_usuario():
+    try:
+        data = request.get_json()
+        logger.debug(f"Datos recibidos para login: {data}")
+
+        # Validar datos obligatorios y no vacíos
+        required_fields = ["email", "contraseña"]
+        if not data or not all(k in data for k in required_fields):
+            return jsonify({"error": "Faltan datos obligatorios: email, contraseña"}), 400
+
+        for field in required_fields:
+            if not str(data[field]).strip():
+                return jsonify({"error": f"El campo '{field}' no puede estar vacío"}), 400
+
+        # Validar email
+        if not is_valid_email(data["email"]):
+            return jsonify({"error": "Formato de email inválido"}), 400
+
+        # Buscar usuario por email
+        usuario = Usuario.query.filter_by(email=data["email"]).first()
+        if not usuario:
+            logger.debug(f"Usuario no encontrado para email: {data['email']}")
+            return jsonify({"error": "Credenciales inválidas"}), 401
+
+        # Verificar contraseña
+        if not check_password_hash(usuario.contraseña_hash, data["contraseña"]):
+            logger.debug("Contraseña incorrecta")
+            return jsonify({"error": "Credenciales inválidas"}), 401
+
+        logger.debug(f"Login exitoso para usuario: {usuario.email}")
+        return jsonify({
+            "message": "Login exitoso",
+            "usuario": {
+                "id_usuario": usuario.id_usuario,
+                "nombre": usuario.nombre,
+                "email": usuario.email,
+                "rol": usuario.rol,
+                "fecha_registro": usuario.fecha_registro.isoformat(),
+                "id_preferencia": usuario.id_preferencia
+            }
+        }), 200
+    except Exception as e:
+        logger.error(f"Error al procesar login: {str(e)}")
+        return jsonify({"error": f"Error al procesar login: {str(e)}"}), 500
 if __name__ == "__main__":
     app.run(debug=True)
+
+
