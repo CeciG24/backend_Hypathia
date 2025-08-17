@@ -1,14 +1,9 @@
-<<<<<<< HEAD
-from models import db
 
-class Preferencia (db.Model):
-=======
-from flask_sqlalchemy import SQLAlchemy
+from . import db
 from datetime import datetime
 
-db = SQLAlchemy()
-class preferencias (db.Model):
->>>>>>> 5c996e8b362001d937c81d9fc3ce7c4e4a747824
+class Preferencia (db.Model):
+
     __tablename__ = "preferencias"
 
     id_preferencia = db.Column(db.Integer, primary_key=True)

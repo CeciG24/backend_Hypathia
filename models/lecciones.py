@@ -1,10 +1,5 @@
-<<<<<<< HEAD
 from . import db
-=======
-from flask_sqlalchemy import SQLAlchemy
 
-db = SQLAlchemy()
->>>>>>> 5c996e8b362001d937c81d9fc3ce7c4e4a747824
 
 class Leccion(db.Model):
     __tablename__ = "leccion"
