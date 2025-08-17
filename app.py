@@ -29,6 +29,8 @@ from models.usuario import Usuario
 from models.test import Test
 from models.ruta_aprendizaje import RutaAprendizaje
 from models.perfil_estudiante import PerfilEstudiante
+from models.lecciones import Leccion
+from models.modulo import Modulo
 from datetime import datetime
 import re
 
@@ -305,7 +307,6 @@ def delete_ruta(id):
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar ruta: {str(e)}"}), 500
     
-
 @app.route("/login", methods=["POST"],endpoint='login_usuario')
 def login_usuario():
     try:
@@ -383,10 +384,6 @@ def save_test_results():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-
-# Configura tu clave de API de Gemini
-# ¡Importante! Guarda tu clave en un lugar seguro (variables de entorno)
-# En este ejemplo, la pongo directamente para que veas el código completo
 API_KEY = "AIzaSyCPsyWhUw7t9WCUSRg5zzqQyje8Tizou2E"
 genai.configure(api_key=API_KEY)
 
@@ -486,7 +483,242 @@ def analizar_perfil_inicial():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
+#CRUD modulos
+@app.route("/modulos", methods=['GET'])
+def get_modulos():
+    try:
+        modulos = Modulo.query.all()
+        
+        # Mejor estructuración de los datos
+        modulos_data = [
+            {
+                "id": modulo.id_modulo,
+                "id_ruta": modulo.id_modulo,
+                "titulo": modulo.titulo,
+                "descripcion": modulo.descripcion,
+                "orden": modulo.orden
+            }
+            for modulo in modulos
+        ]
+        
+        return jsonify({
+            "success": True,
+            "data": modulos_data,
+            "count": len(modulos_data)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route("/modulos", methods=["POST"])
+def post_modulo():
+    try:
+        data = request.get_json()
+        # Validar datos obligatorios
+        if not data or not all(k in data for k in (
+                "id_ruta",
+                "titulo",
+                "descripcion",
+                "orden")):
+            return jsonify({"error": "Faltan datos obligatorios"}), 400
+
+        nuevo_modulo = Modulo(
+            id_ruta=data["id_ruta"],
+            titulo=data["titulo"],
+            descripcion=data["descripcion"],
+            orden=data["orden"],
+        )
+
+        db.session.add(nuevo_modulo)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "titulo": nuevo_modulo.titulo,
+            "message": "Modulo creado exitosamente",
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    
+@app.route("/modulos/<int:id>", methods=["PUT"])
+def update_modulo(id):
+    try:
+        modulo = modulo.query.get(id)
+        if not modulo:
+            return jsonify({"error": "modulo no encontrada"}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No se proporcionaron datos para actualizar"}), 400
+
+        # Actualizar campos si se proporcionan
+        if "id_ruta" in data:
+            if not data["id_ruta"].strip():
+                return jsonify({"error": "El id_ruta no puede estar vacío"}), 400
+            modulo.id_ruta = data["id_ruta"]
+
+        if "titulo" in data:
+            if not data["titulo"].strip():
+                return jsonify({"error": "El titulo no puede estar vacío"}), 400
+            modulo.titulo = data["titulo"]
+
+        if "descripcion" in data:
+            modulo.descripcion = data["descripcion"]
+
+        if "orden" in data:
+            modulo.orden = data["orden"]
+
+        db.session.commit()
+        return jsonify({
+            "message": "modulo actualizado con éxito",
+            "id_modulo": modulo.id_modulo
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al actualizar modulo: {str(e)}"}), 500
+    
+@app.route("/modulos/<int:id>", methods=["DELETE"])
+def delete_modulo(id):
+    try:
+        modulo = Modulo.query.get(id)
+        if not modulo:
+            return jsonify({"error": "modulo no encontrado"}), 404
+
+        db.session.delete(modulo)
+        db.session.commit()
+        return jsonify({"message": "modulo eliminado con éxito"}), 202
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al eliminar modulo: {str(e)}"}), 500
+    
+#CRUD lecciones
+@app.route("/lecciones", methods=['GET'])
+def get_lecciones():
+    try:
+        lecciones = Leccion.query.all()
+        
+        # Mejor estructuración de los datos
+        lecciones_data = [
+            {
+                "id": leccion.id_leccion,
+                "id_modulo": leccion.id_modulo,
+                "titulo": leccion.titulo,
+                "contenido": leccion.contenido,
+                "tipo": leccion.tipo,
+                "orden": leccion.orden
+            }
+            for leccion in lecciones
+        ]
+        
+        return jsonify({
+            "success": True,
+            "data": lecciones_data,
+            "count": len(lecciones_data)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route("/lecciones", methods=["POST"])
+def post_leccion():
+    try:
+        data = request.get_json()
+        # Validar datos obligatorios
+        if not data or not all(k in data for k in (
+                "id_modulo",
+                "titulo",
+                "contenido",
+                "tipo",
+                "orden")):
+            return jsonify({"error": "Faltan datos obligatorios"}), 400
+
+        nueva_leccion = Leccion(
+            id_modulo=data["id_modulo"],
+            titulo=data["titulo"],
+            contenido=data["contenido"],
+            tipo=data["tipo"],
+            orden=data["orden"],
+        )
+
+        db.session.add(nueva_leccion)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "titulo": nueva_leccion.titulo,
+            "message": "leccion creada exitosamente",
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    
+@app.route("/lecciones/<int:id>", methods=["PUT"])
+def update_leccion(id):
+    try:
+        leccion = Leccion.query.get(id)
+        if not leccion:
+            return jsonify({"error": "leccion no encontrada"}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No se proporcionaron datos para actualizar"}), 400
+
+        # Actualizar campos si se proporcionan
+        if "id_modulo" in data:
+            if not data["id_modulo"].strip():
+                return jsonify({"error": "El id_modulo no puede estar vacío"}), 400
+            leccion.id_modulo = data["id_modulo"]
+
+        if "titulo" in data:
+            if not data["titulo"].strip():
+                return jsonify({"error": "El titulo no puede estar vacío"}), 400
+            leccion.titulo = data["titulo"]
+
+        if "contenido" in data:
+            leccion.contenido = data["contenido"]
+
+        if "tipo" in data:
+            leccion.tipo = data["tipo"]
+
+        if "orden" in data:
+            leccion.orden = data["orden"]
+
+        db.session.commit()
+        return jsonify({
+            "message": "leccion actualizada con éxito",
+            "id_leccion": leccion.id_leccion
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al actualizar leccion: {str(e)}"}), 500
+    
+@app.route("/lecciones/<int:id>", methods=["DELETE"])
+def delete_leccion(id):
+    try:
+        leccion = Leccion.query.get(id)
+        if not leccion:
+            return jsonify({"error": "leccion no encontrada"}), 404
+
+        db.session.delete(leccion)
+        db.session.commit()
+        return jsonify({"message": "leccion eliminada con éxito"}), 202
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al eliminar leccion: {str(e)}"}), 500
     
 if __name__ == "__main__":
     app.run(debug=True)
-
